@@ -54,7 +54,7 @@ GRANT SELECT ON pacientes, tipos_sangre, medicos, especialidades,
     TO rol_medico_sigeh;
 
 GRANT INSERT, UPDATE ON pacientes, consultas, expedientes, recetas,
-    detalle_receta, estudios_laboratorio TO rol_medico_sigeh;
+    detalle_receta, estudios_laboratorio, hospitalizaciones TO rol_medico_sigeh;
 
 GRANT SELECT, INSERT ON auditoria_cambios TO rol_medico_sigeh;
 

@@ -218,6 +218,11 @@ async function registrarHospitalizacion(req, res) {
 
     return res.status(201).json({ id_hospitalizacion: result.rows[0].id_hospitalizacion });
   } catch (err) {
+    console.error('registrarHospitalizacion error:', {
+      message: err.message,
+      code: err.code,
+      detail: err.detail
+    });
     return res.status(500).json({ message: 'Error al registrar hospitalizacion' });
   }
 }
