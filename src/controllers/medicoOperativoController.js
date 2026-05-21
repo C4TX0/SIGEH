@@ -90,6 +90,11 @@ async function atenderConsulta(req, res) {
 
     return res.status(200).json({ message: 'Consulta atendida' });
   } catch (err) {
+    console.error('atenderConsulta error:', {
+      message: err.message,
+      code: err.code,
+      detail: err.detail
+    });
     return res.status(500).json({ message: 'Error al atender consulta' });
   }
 }
@@ -161,6 +166,11 @@ async function solicitarEstudio(req, res) {
 
     return res.status(201).json({ message: 'Estudio solicitado' });
   } catch (err) {
+    console.error('solicitarEstudio error:', {
+      message: err.message,
+      code: err.code,
+      detail: err.detail
+    });
     return res.status(500).json({ message: 'Error al solicitar estudio' });
   }
 }

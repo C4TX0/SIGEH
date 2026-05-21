@@ -56,6 +56,8 @@ GRANT SELECT ON pacientes, tipos_sangre, medicos, especialidades,
 GRANT INSERT, UPDATE ON pacientes, consultas, expedientes, recetas,
     detalle_receta, estudios_laboratorio TO rol_medico_sigeh;
 
+GRANT SELECT, INSERT ON auditoria_cambios TO rol_medico_sigeh;
+
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO rol_medico_sigeh;
 
 -- 7. Permisos del Usuario General (Recepcionista/Administrativo) [cite: 899, 901]
@@ -65,6 +67,8 @@ GRANT SELECT ON pacientes, medicos, especialidades, consultas, estados_consulta,
 
 GRANT INSERT, UPDATE ON pacientes, consultas, facturas, pagos
     TO rol_usuario_general_sigeh;
+
+GRANT SELECT, INSERT ON auditoria_cambios TO rol_usuario_general_sigeh;
 
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO rol_usuario_general_sigeh;
 
