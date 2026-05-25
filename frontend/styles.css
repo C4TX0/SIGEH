@@ -203,6 +203,40 @@ button {
   flex: 1;
 }
 
+.search-results {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.search-result-item {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.search-result-item:hover,
+.search-result-item:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.search-results-empty {
+  padding: 10px 12px;
+  color: var(--muted);
+  border: 1px dashed var(--stroke);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
 .form-actions {
   display: flex;
   gap: 10px;

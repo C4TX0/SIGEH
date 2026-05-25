@@ -41,6 +41,34 @@ router.get('/medicos', auth, authorize(['ADMIN', 'USUARIO_GENERAL']), async (req
   }
 });
 
+router.get('/medicos/buscar', auth, authorize(['ADMIN', 'USUARIO_GENERAL']), async (req, res) => {
+  const term = (req.query.q || '').trim();
+
+  if (!term) {
+    return res.status(400).json({ message: 'Parametro de busqueda requerido' });
+  }
+
+  try {
+    const result = await queryWithRole(
+      req.user.dbRole,
+      `SELECT id_medico, nombre, apellido_paterno, apellido_materno, cedula_profesional
+       FROM medicos
+       WHERE CAST(id_medico AS TEXT) ILIKE $1
+          OR nombre ILIKE $1
+          OR apellido_paterno ILIKE $1
+          OR apellido_materno ILIKE $1
+          OR cedula_profesional ILIKE $1
+       ORDER BY id_medico
+       LIMIT 8`,
+      [`%${term}%`]
+    );
+
+    return res.status(200).json(result.rows);
+  } catch (err) {
+    return res.status(500).json({ message: 'Error al buscar medicos' });
+  }
+});
+
 router.get('/especialidades', auth, authorize(['ADMIN']), async (req, res) => {
   try {
     const result = await queryWithRole(
