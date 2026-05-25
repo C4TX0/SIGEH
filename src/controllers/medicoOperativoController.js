@@ -146,6 +146,29 @@ async function crearReceta(req, res) {
   }
 }
 
+async function surtirReceta(req, res) {
+  const idReceta = Number(req.params.id);
+
+  if (!isPositiveNumber(idReceta)) {
+    return res.status(400).json({ message: 'Id de receta invalido' });
+  }
+
+  try {
+    await queryWithRole(
+      req.user.dbRole,
+      'CALL surtir_receta_farmacia($1)',
+      [idReceta]
+    );
+
+    return res.status(200).json({ message: 'Receta surtida' });
+  } catch (err) {
+    if (err.code === 'P0001') {
+      return res.status(409).json({ message: err.message });
+    }
+    return res.status(500).json({ message: 'Error al surtir receta' });
+  }
+}
+
 async function solicitarEstudio(req, res) {
   const idMedico = getMedicoId(req);
   const idConsulta = Number(req.params.id);
@@ -237,21 +260,29 @@ async function altaHospitalizacion(req, res) {
   }
 
   try {
-    const result = await queryWithRole(
+    const ownership = await queryWithRole(
       req.user.dbRole,
-      `UPDATE hospitalizaciones
-       SET fecha_alta = NOW(), diagnostico_egreso = $1
-       WHERE id_hospitalizacion = $2 AND id_medico = $3 AND fecha_alta IS NULL
-       RETURNING id_hospitalizacion`,
-      [diagnostico_egreso, idHospitalizacion, idMedico]
+      `SELECT id_hospitalizacion
+       FROM hospitalizaciones
+       WHERE id_hospitalizacion = $1 AND id_medico = $2 AND fecha_alta IS NULL`,
+      [idHospitalizacion, idMedico]
     );
 
-    if (result.rowCount === 0) {
+    if (ownership.rowCount === 0) {
       return res.status(404).json({ message: 'Hospitalizacion no encontrada' });
     }
 
+    await queryWithRole(
+      req.user.dbRole,
+      'CALL procesar_alta_hospitalaria($1, $2)',
+      [idHospitalizacion, diagnostico_egreso]
+    );
+
     return res.status(200).json({ message: 'Alta registrada' });
   } catch (err) {
+    if (err.code === 'P0001') {
+      return res.status(409).json({ message: err.message });
+    }
     return res.status(500).json({ message: 'Error al registrar alta' });
   }
 }
@@ -260,6 +291,7 @@ module.exports = {
   getAgendaHoy,
   atenderConsulta,
   crearReceta,
+  surtirReceta,
   solicitarEstudio,
   listarHospitalizaciones,
   registrarHospitalizacion,

@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const authRoutes = require('./routes/authRoutes');
 const pacientesRoutes = require('./routes/pacientesRoutes');
@@ -13,13 +15,41 @@ const usuariosRoutes = require('./routes/usuariosRoutes');
 const auditoriaRoutes = require('./routes/auditoriaRoutes');
 const facturacionRoutes = require('./routes/facturacionRoutes');
 const medicoOperativoRoutes = require('./routes/medicoOperativoRoutes');
+const infraRoutes = require('./routes/infraRoutes');
 const { pool } = require('./config/db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || origin === 'null') {
+      return callback(null, true);
+    }
+
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Origen no permitido por CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.API_RATE_LIMIT || 500),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Demasiadas solicitudes, intenta de nuevo mas tarde' }
+});
+
+app.disable('x-powered-by');
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '1mb' }));
+app.use('/api', apiLimiter);
 
 app.get('/api/health', async (req, res) => {
   try {
@@ -41,6 +71,7 @@ app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
 app.use('/api/facturacion', facturacionRoutes);
 app.use('/api/medico', medicoOperativoRoutes);
+app.use('/api/infra', infraRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: 'Ruta no encontrada' });

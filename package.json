@@ -5,13 +5,28 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node src/server.js"
+    "dev": "node src/server.js",
+    "setup:db": "powershell -ExecutionPolicy Bypass -File ./scripts/setup-db.ps1",
+    "backup:db": "node scripts/backup-db.js",
+    "backup:diferencial": "node scripts/backup-delta-report.js --mode=diferencial",
+    "backup:incremental": "node scripts/backup-delta-report.js --mode=incremental",
+    "restore:db": "node scripts/restore-db.js",
+    "pitr:plan": "node scripts/pitr-plan.js",
+    "migrate:db": "node scripts/migrate-db.js",
+    "optimize:compare": "node scripts/compare-optimization.js",
+    "alerts:check": "node scripts/check-alerts.js",
+    "replica:setup": "powershell -ExecutionPolicy Bypass -File ./scripts/setup-standby-replica.ps1",
+    "replica:refresh": "powershell -ExecutionPolicy Bypass -File ./scripts/refresh-standby-replica.ps1",
+    "replica:check": "powershell -ExecutionPolicy Bypass -File ./scripts/check-standby-replica.ps1",
+    "monitor:db": "powershell -ExecutionPolicy Bypass -File ./scripts/monitor-db.ps1"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.11.5"
   }
