@@ -63,8 +63,20 @@ let medicosCache = [];
 let especialidadesCache = [];
 let medicamentosCache = [];
 let laboratoriosCache = [];
+let facturacionPacientesCache = [];
+let facturacionMetodosPagoCache = [];
+let facturacionPacienteSearchTimer = null;
+let facturacionPacienteSearchSeq = 0;
+let consultaPacienteSearchTimer = null;
+let consultaPacienteSearchSeq = 0;
+let consultaMedicoSearchTimer = null;
+let consultaMedicoSearchSeq = 0;
+let medicoSearchTimer = null;
+let medicoSearchSeq = 0;
 let consultaActivaId = null;
 let recetaDetalle = [];
+
+const IVA_RATE = 0.16;
 
 const pacienteEditCard = document.getElementById('paciente-edit-card');
 const pacienteEditCancel = document.getElementById('paciente-edit-cancel');
@@ -81,6 +93,21 @@ const usuarioRolSelect = document.getElementById('usr-rol');
 const usuarioRolEditSelect = document.getElementById('usr-edit-rol');
 const usuarioMedicoField = document.getElementById('usr-medico-field');
 const usuarioMedicoEditField = document.getElementById('usr-edit-medico-field');
+const facturacionPacienteInput = document.getElementById('fac-paciente');
+const facturacionSubtotalInput = document.getElementById('fac-subtotal');
+const facturacionIvaInput = document.getElementById('fac-iva');
+const facturacionMetodoSelect = document.getElementById('fac-metodo');
+const facturacionMontoInput = document.getElementById('fac-monto');
+const facturacionPacienteResults = document.getElementById('fac-paciente-results');
+const consultaPacienteInput = document.getElementById('con-paciente');
+const consultaPacienteResults = document.getElementById('con-paciente-results');
+const consultaMedicoInput = document.getElementById('con-medico');
+const consultaMedicoResults = document.getElementById('con-medico-results');
+const pacienteNombreInput = document.getElementById('pac-nombre');
+const pacienteApellidoPaternoInput = document.getElementById('pac-apellido-paterno');
+const pacienteApellidoMaternoInput = document.getElementById('pac-apellido-materno');
+const pacienteFechaInput = document.getElementById('pac-fecha');
+const pacienteCurpInput = document.getElementById('pac-curp');
 
 function decodeJwt(token) {
   try {
@@ -172,7 +199,6 @@ async function loadMedicosCatalog() {
   try {
     const data = await apiRequest('/catalogos/medicos');
     medicosCache = Array.isArray(data) ? data : [];
-    populateMedicosSelect('con-medico', true);
     populateMedicosSelect('usr-medico', true);
     populateMedicosSelect('usr-edit-medico', false);
   } catch (err) {
@@ -211,6 +237,18 @@ async function loadLaboratoriosCatalog() {
   }
 }
 
+async function loadFacturacionCatalogs() {
+  try {
+    const metodosData = await apiRequest('/facturacion/metodos-pago');
+    facturacionMetodosPagoCache = Array.isArray(metodosData) ? metodosData : [];
+    populateFacturacionMetodosPago();
+  } catch (err) {
+    facturacionMetodosPagoCache = [];
+  }
+
+  updateFacturacionImportes();
+}
+
 function populateMedicamentosSelect(selectId) {
   const select = document.getElementById(selectId);
   if (!select) return;
@@ -236,6 +274,317 @@ function populateLaboratoriosSelect(selectId) {
     option.textContent = row.nombre;
     select.appendChild(option);
   });
+}
+
+function populateFacturacionPacientes() {
+  renderFacturacionPacienteResults(facturacionPacientesCache);
+}
+
+function getFacturacionPacienteLabel(row) {
+  const nombreCompleto = [row.nombre, row.apellido_paterno, row.apellido_materno].filter(Boolean).join(' ');
+  return `${row.id_paciente} - ${nombreCompleto}`.trim();
+}
+
+function renderFacturacionPacienteResults(rows) {
+  if (!facturacionPacienteResults) return;
+
+  const filtered = Array.isArray(rows) ? rows.slice(0, 8) : [];
+
+  facturacionPacienteResults.innerHTML = '';
+
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'search-results-empty';
+    empty.textContent = 'Escribe al menos 2 caracteres para buscar.';
+    facturacionPacienteResults.appendChild(empty);
+    return;
+  }
+
+  filtered.forEach((row) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'search-result-item';
+    button.textContent = getFacturacionPacienteLabel(row);
+    button.addEventListener('click', () => {
+      if (facturacionPacienteInput) {
+        facturacionPacienteInput.value = getFacturacionPacienteLabel(row);
+      }
+      renderFacturacionPacienteResults(facturacionPacientesCache);
+      facturacionPacienteInput?.focus();
+    });
+    facturacionPacienteResults.appendChild(button);
+  });
+}
+
+async function searchFacturacionPacientes(term) {
+  const query = (term || '').trim();
+
+  if (!facturacionPacienteResults) return;
+
+  if (query.length < 2) {
+    facturacionPacientesCache = [];
+    renderFacturacionPacienteResults([]);
+    return;
+  }
+
+  const requestSeq = ++facturacionPacienteSearchSeq;
+
+  const loading = document.createElement('div');
+  loading.className = 'search-results-empty';
+  loading.textContent = 'Buscando pacientes...';
+  facturacionPacienteResults.innerHTML = '';
+  facturacionPacienteResults.appendChild(loading);
+
+  try {
+    const data = await apiRequest(`/pacientes/buscar?q=${encodeURIComponent(query)}`);
+    if (requestSeq !== facturacionPacienteSearchSeq) {
+      return;
+    }
+
+    facturacionPacientesCache = Array.isArray(data) ? data : [];
+    renderFacturacionPacienteResults(facturacionPacientesCache);
+  } catch (err) {
+    if (requestSeq !== facturacionPacienteSearchSeq) {
+      return;
+    }
+
+    facturacionPacientesCache = [];
+    facturacionPacienteResults.innerHTML = '';
+    const error = document.createElement('div');
+    error.className = 'search-results-empty';
+    error.textContent = 'No se pudo buscar pacientes.';
+    facturacionPacienteResults.appendChild(error);
+  }
+}
+
+function populateFacturacionMetodosPago() {
+  if (!facturacionMetodoSelect) return;
+
+  facturacionMetodoSelect.innerHTML = '<option value="">Selecciona un metodo</option>';
+  facturacionMetodosPagoCache.forEach((metodo) => {
+    const option = document.createElement('option');
+    option.value = typeof metodo === 'string' ? metodo : metodo.value;
+    option.textContent = typeof metodo === 'string' ? metodo : (metodo.label || metodo.value);
+    facturacionMetodoSelect.appendChild(option);
+  });
+}
+
+function parseSearchResultId(value) {
+  const raw = (value || '').trim();
+  const match = raw.match(/^(\d+)/);
+  return match ? Number(match[1]) : NaN;
+}
+
+function renderSearchResults(container, rows, onSelect, getLabel) {
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'search-results-empty';
+    empty.textContent = 'Sin coincidencias';
+    container.appendChild(empty);
+    return;
+  }
+
+  rows.slice(0, 8).forEach((row) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'search-result-item';
+    button.textContent = getLabel(row);
+    button.addEventListener('click', () => onSelect(row));
+    container.appendChild(button);
+  });
+}
+
+async function searchConsultaPacientes(term) {
+  const query = (term || '').trim();
+
+  if (!consultaPacienteResults) return;
+
+  if (query.length < 1) {
+    consultaPacienteResults.innerHTML = '';
+    const hint = document.createElement('div');
+    hint.className = 'search-results-empty';
+    hint.textContent = 'Escribe id, nombre o CURP para buscar.';
+    consultaPacienteResults.appendChild(hint);
+    return;
+  }
+
+  const requestSeq = ++consultaPacienteSearchSeq;
+  consultaPacienteResults.innerHTML = '<div class="search-results-empty">Buscando pacientes...</div>';
+
+  try {
+    const data = await apiRequest(`/pacientes/buscar?q=${encodeURIComponent(query)}`);
+    if (requestSeq !== consultaPacienteSearchSeq) return;
+
+    const rows = Array.isArray(data) ? data : [];
+    renderSearchResults(
+      consultaPacienteResults,
+      rows,
+      (row) => {
+        if (consultaPacienteInput) {
+          consultaPacienteInput.value = `${row.id_paciente} - ${row.nombre} ${row.apellido_paterno || ''}`.trim();
+        }
+        consultaPacienteResults.innerHTML = '';
+      },
+      (row) => `${row.id_paciente} - ${row.nombre} ${row.apellido_paterno || ''}`.trim()
+    );
+  } catch (err) {
+    if (requestSeq !== consultaPacienteSearchSeq) return;
+    consultaPacienteResults.innerHTML = '<div class="search-results-empty">No se pudo buscar pacientes.</div>';
+  }
+}
+
+async function searchConsultaMedicos(term) {
+  const query = (term || '').trim();
+
+  if (!consultaMedicoResults) return;
+
+  if (query.length < 1) {
+    consultaMedicoResults.innerHTML = '';
+    const hint = document.createElement('div');
+    hint.className = 'search-results-empty';
+    hint.textContent = 'Escribe id o nombre para buscar.';
+    consultaMedicoResults.appendChild(hint);
+    return;
+  }
+
+  const requestSeq = ++consultaMedicoSearchSeq;
+  consultaMedicoResults.innerHTML = '<div class="search-results-empty">Buscando medicos...</div>';
+
+  try {
+    const data = await apiRequest(`/catalogos/medicos/buscar?q=${encodeURIComponent(query)}`);
+    if (requestSeq !== consultaMedicoSearchSeq) return;
+
+    const rows = Array.isArray(data) ? data : [];
+    renderSearchResults(
+      consultaMedicoResults,
+      rows,
+      (row) => {
+        if (consultaMedicoInput) {
+          consultaMedicoInput.value = `${row.id_medico} - ${row.nombre} ${row.apellido_paterno || ''} ${row.apellido_materno || ''}`.trim();
+        }
+        consultaMedicoResults.innerHTML = '';
+      },
+      (row) => `${row.id_medico} - ${row.nombre} ${row.apellido_paterno || ''} ${row.apellido_materno || ''}`.trim()
+    );
+  } catch (err) {
+    if (requestSeq !== consultaMedicoSearchSeq) return;
+    consultaMedicoResults.innerHTML = '<div class="search-results-empty">No se pudo buscar medicos.</div>';
+  }
+}
+
+function parseFacturacionPacienteId(value) {
+  const raw = (value || '').trim();
+  const match = raw.match(/^(\d+)/);
+  return match ? Number(match[1]) : NaN;
+}
+
+function calculateFacturacionIva(subtotal) {
+  return Number((subtotal * IVA_RATE).toFixed(2));
+}
+
+function normalizeCurpText(value) {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z]/g, '')
+    .toUpperCase();
+}
+
+function getFirstInternalVowel(value) {
+  const text = normalizeCurpText(value);
+  const match = text.slice(1).match(/[AEIOU]/);
+  return match ? match[0] : 'X';
+}
+
+function getFirstInternalConsonant(value) {
+  const text = normalizeCurpText(value);
+  const match = text.slice(1).match(/[BCDFGHJKLMNPQRSTVWXYZ]/);
+  return match ? match[0] : 'X';
+}
+
+function formatCurpDate(dateValue) {
+  if (!dateValue) {
+    return '';
+  }
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const year = String(date.getFullYear()).slice(-2);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}${month}${day}`;
+}
+
+function buildCurpSuffix(seed) {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) % 1296;
+  }
+
+  return hash.toString(36).toUpperCase().padStart(2, '0').slice(-2);
+}
+
+function generateCurpPreview() {
+  if (!pacienteCurpInput) {
+    return '';
+  }
+
+  const nombre = normalizeCurpText(pacienteNombreInput?.value);
+  const apellidoPaterno = normalizeCurpText(pacienteApellidoPaternoInput?.value);
+  const apellidoMaterno = normalizeCurpText(pacienteApellidoMaternoInput?.value);
+  const fecha = formatCurpDate(pacienteFechaInput?.value);
+
+  if (!nombre || !apellidoPaterno || !fecha) {
+    pacienteCurpInput.value = '';
+    return '';
+  }
+
+  const nombrePrincipal = ['MARIA', 'JOSE'].includes(nombre) && nombre.length > 2
+    ? nombre.slice(1)
+    : nombre;
+
+  const prefijo = [
+    apellidoPaterno[0] || 'X',
+    getFirstInternalVowel(apellidoPaterno),
+    apellidoMaterno[0] || 'X',
+    nombrePrincipal[0] || 'X'
+  ].join('');
+
+  const sexoPlaceholder = 'X';
+  const entidadPlaceholder = 'XX';
+  const consonantes = [
+    getFirstInternalConsonant(apellidoPaterno),
+    getFirstInternalConsonant(apellidoMaterno),
+    getFirstInternalConsonant(nombrePrincipal)
+  ].join('');
+  const homoclave = buildCurpSuffix(`${apellidoPaterno}|${apellidoMaterno}|${nombrePrincipal}|${fecha}`);
+
+  const curp = `${prefijo}${fecha}${sexoPlaceholder}${entidadPlaceholder}${consonantes}${homoclave}`.slice(0, 18);
+  pacienteCurpInput.value = curp;
+  return curp;
+}
+
+function updateFacturacionImportes() {
+  if (!facturacionSubtotalInput || !facturacionIvaInput || !facturacionMontoInput) return;
+
+  const subtotal = Number.parseFloat(facturacionSubtotalInput.value);
+  if (Number.isNaN(subtotal) || subtotal < 0) {
+    facturacionIvaInput.value = '';
+    facturacionMontoInput.value = '';
+    return;
+  }
+
+  const iva = calculateFacturacionIva(subtotal);
+  const total = Number((subtotal + iva).toFixed(2));
+  facturacionIvaInput.value = iva.toFixed(2);
+  facturacionMontoInput.value = total.toFixed(2);
 }
 
 function populateEspecialidadesSelect(selectId, includeEmpty) {
@@ -435,6 +784,20 @@ function setView(key, title) {
   }
   viewTitle.textContent = title || 'Dashboard';
 
+  if (key === 'consultas') {
+    loadEstadosConsulta();
+    if (consultaPacienteInput && (consultaPacienteInput.value || '').trim().length >= 1) {
+      searchConsultaPacientes(consultaPacienteInput.value);
+    }
+    if (consultaMedicoInput && (consultaMedicoInput.value || '').trim().length >= 1) {
+      searchConsultaMedicos(consultaMedicoInput.value);
+    }
+  }
+
+  if (key === 'facturacion') {
+    loadFacturacionCatalogs();
+  }
+
   Array.from(menu.querySelectorAll('button')).forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.view === key);
   });
@@ -471,6 +834,9 @@ function buildMenu(role) {
         }
         if (item.key === 'auditoria') {
           loadAuditoria();
+        }
+        if (item.key === 'consultas') {
+          loadEstadosConsulta();
         }
         if (item.key === 'agendaMedico') {
           loadAgendaMedico();
@@ -621,12 +987,13 @@ function logout() {
 async function handlePacienteCreate(event) {
   event.preventDefault();
 
+  const generatedCurp = generateCurpPreview();
   const payload = {
-    nombre: document.getElementById('pac-nombre').value.trim(),
-    apellido_paterno: document.getElementById('pac-apellido-paterno').value.trim(),
-    apellido_materno: document.getElementById('pac-apellido-materno').value.trim() || null,
-    fecha_nacimiento: document.getElementById('pac-fecha').value,
-    curp: document.getElementById('pac-curp').value.trim(),
+    nombre: pacienteNombreInput.value.trim(),
+    apellido_paterno: pacienteApellidoPaternoInput.value.trim(),
+    apellido_materno: pacienteApellidoMaternoInput.value.trim() || null,
+    fecha_nacimiento: pacienteFechaInput.value,
+    curp: generatedCurp,
     telefono: document.getElementById('pac-telefono').value.trim() || null,
     correo_electronico: document.getElementById('pac-correo').value.trim() || null,
     id_tipo_sangre: TIPO_SANGRE_TO_ID[document.getElementById('pac-tipo').value] || null,
@@ -638,7 +1005,7 @@ async function handlePacienteCreate(event) {
   }
 
   if (payload.curp.length !== 18) {
-    return Swal.fire('Error', 'CURP debe tener 18 caracteres.', 'error');
+    return Swal.fire('Error', 'No se pudo generar la CURP.', 'error');
   }
 
   try {
@@ -767,25 +1134,41 @@ async function handleMedicoCreate(event) {
 }
 
 async function handleMedicoBuscar() {
-  const rawId = document.getElementById('medico-id-buscar').value.trim();
-  const id = rawId ? parseInt(rawId, 10) : null;
+  const term = document.getElementById('medico-id-buscar').value.trim();
+  const tbody = document.querySelector('#medicos-table tbody');
+
+  if (!tbody) {
+    return;
+  }
+
+  if (term.length < 1) {
+    tbody.innerHTML = '<tr><td colspan="4">Escribe un id o nombre para buscar.</td></tr>';
+    return;
+  }
+
+  const requestSeq = ++medicoSearchSeq;
+  tbody.innerHTML = '<tr><td colspan="4">Buscando medicos...</td></tr>';
 
   try {
-    const data = id ? await apiRequest(`/medicos/${id}`) : await apiRequest('/medicos');
-    const tbody = document.querySelector('#medicos-table tbody');
+    const data = await apiRequest(`/catalogos/medicos/buscar?q=${encodeURIComponent(term)}`);
+    if (requestSeq !== medicoSearchSeq) {
+      return;
+    }
+
+    const rows = Array.isArray(data) ? data : [];
     tbody.innerHTML = '';
-    const rows = Array.isArray(data) ? data : [data];
 
     if (rows.length === 0) {
-      return Swal.fire('Aviso', 'No hay medicos registrados', 'info');
+      tbody.innerHTML = '<tr><td colspan="4">Sin coincidencias.</td></tr>';
+      return;
     }
 
     rows.forEach((rowData) => {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>${rowData.id_medico}</td>
-        <td>${rowData.nombre} ${rowData.apellido_paterno}</td>
-        <td>${rowData.cedula_profesional}</td>
+        <td>${rowData.nombre} ${rowData.apellido_paterno || ''} ${rowData.apellido_materno || ''}</td>
+        <td>${rowData.cedula_profesional || ''}</td>
         <td><button class="ghost" data-id="${rowData.id_medico}">Editar</button></td>
       `;
       row.querySelector('button').addEventListener('click', () => {
@@ -795,7 +1178,10 @@ async function handleMedicoBuscar() {
       tbody.appendChild(row);
     });
   } catch (err) {
-    Swal.fire('Error', err.message, 'error');
+    if (requestSeq !== medicoSearchSeq) {
+      return;
+    }
+    tbody.innerHTML = '<tr><td colspan="4">No se pudo buscar medicos.</td></tr>';
   }
 }
 
@@ -1091,30 +1477,33 @@ async function handleRespaldoCreate(event) {
 async function handleFacturacion(event) {
   event.preventDefault();
 
+  const idPaciente = parseFacturacionPacienteId(facturacionPacienteInput?.value);
+  const subtotal = Number.parseFloat(facturacionSubtotalInput?.value);
+  const metodoPago = facturacionMetodoSelect?.value.trim();
+  const monto = Number.parseFloat(facturacionMontoInput?.value);
+
   const payload = {
-    id_paciente: parseInt(document.getElementById('fac-paciente').value, 10),
-    folio: document.getElementById('fac-folio').value.trim(),
-    subtotal: parseFloat(document.getElementById('fac-subtotal').value),
-    iva: parseFloat(document.getElementById('fac-iva').value),
-    metodo_pago: document.getElementById('fac-metodo').value.trim(),
-    monto: parseFloat(document.getElementById('fac-monto').value)
+    id_paciente: idPaciente,
+    subtotal,
+    metodo_pago: metodoPago,
+    monto
   };
 
-  if (!payload.id_paciente || !payload.folio || Number.isNaN(payload.subtotal) || Number.isNaN(payload.iva) || !payload.metodo_pago || Number.isNaN(payload.monto)) {
+  if (!payload.id_paciente || Number.isNaN(payload.subtotal) || !payload.metodo_pago || Number.isNaN(payload.monto)) {
     return Swal.fire('Error', 'Completa los campos requeridos.', 'error');
   }
 
-  if (payload.subtotal < 0 || payload.iva < 0 || payload.monto <= 0) {
+  if (payload.subtotal <= 0 || payload.monto <= 0) {
     return Swal.fire('Error', 'Montos invalidos.', 'error');
   }
 
   try {
-    await apiRequest('/facturacion/pago', {
+    const result = await apiRequest('/facturacion/pago', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
 
-    Swal.fire('Listo', 'Factura y pago registrados', 'success');
+    Swal.fire('Listo', `Factura ${result.folio} y pago registrados`, 'success');
   } catch (err) {
     Swal.fire('Error', err.message, 'error');
   }
@@ -1412,9 +1801,11 @@ async function handleMedicoUpdate(event) {
 async function handleConsultaCreate(event) {
   event.preventDefault();
 
+  const idPaciente = parseSearchResultId(consultaPacienteInput?.value);
+  const idMedico = parseSearchResultId(consultaMedicoInput?.value);
   const payload = {
-    id_pac: parseInt(document.getElementById('con-paciente').value, 10),
-    id_med: parseInt(document.getElementById('con-medico').value, 10),
+    id_pac: idPaciente,
+    id_med: idMedico,
     id_est: null,
     fecha: document.getElementById('con-fecha').value,
     motivo: document.getElementById('con-motivo').value.trim()
@@ -1789,6 +2180,7 @@ function hydrateSession() {
   loadEstadosConsulta();
   if (state.payload.role === 'ADMIN' || state.payload.role === 'USUARIO_GENERAL') {
     loadMedicosCatalog();
+    loadFacturacionCatalogs();
   }
   if (state.payload.role === 'ADMIN') {
     loadEspecialidadesCatalog();
@@ -1820,6 +2212,18 @@ const medicoBuscarBtn = document.getElementById('medico-buscar');
 medicoForm.addEventListener('submit', handleMedicoCreate);
 medicoBuscarBtn.addEventListener('click', handleMedicoBuscar);
 medicoEditForm.addEventListener('submit', handleMedicoUpdate);
+
+const medicoBuscarInput = document.getElementById('medico-id-buscar');
+if (medicoBuscarInput) {
+  medicoBuscarInput.addEventListener('input', () => {
+    if (medicoSearchTimer) {
+      clearTimeout(medicoSearchTimer);
+    }
+    medicoSearchTimer = setTimeout(() => {
+      handleMedicoBuscar();
+    }, 250);
+  });
+}
 
 if (medicoEditCancel) {
   medicoEditCancel.addEventListener('click', hideMedicoEditForm);
@@ -1874,6 +2278,90 @@ if (usuarioRolSelect) {
 if (usuarioRolEditSelect) {
   usuarioRolEditSelect.addEventListener('change', (event) => {
     toggleUsuarioMedicoField(event.target.value, true);
+  });
+}
+
+if (facturacionSubtotalInput) {
+  facturacionSubtotalInput.addEventListener('input', updateFacturacionImportes);
+}
+
+if (facturacionPacienteInput) {
+  facturacionPacienteInput.addEventListener('focus', () => {
+    if ((facturacionPacienteInput.value || '').trim().length >= 2) {
+      searchFacturacionPacientes(facturacionPacienteInput.value);
+    }
+  });
+  facturacionPacienteInput.addEventListener('input', () => {
+    if (facturacionPacienteSearchTimer) {
+      clearTimeout(facturacionPacienteSearchTimer);
+    }
+    facturacionPacienteSearchTimer = setTimeout(() => {
+      searchFacturacionPacientes(facturacionPacienteInput.value);
+    }, 250);
+  });
+  facturacionPacienteInput.addEventListener('change', () => {
+    const id = parseFacturacionPacienteId(facturacionPacienteInput.value);
+    if (Number.isNaN(id)) {
+      searchFacturacionPacientes(facturacionPacienteInput.value);
+      return;
+    }
+
+    const seleccionado = facturacionPacientesCache.find((row) => Number(row.id_paciente) === id);
+    if (seleccionado) {
+      facturacionPacienteInput.value = getFacturacionPacienteLabel(seleccionado);
+    }
+    renderFacturacionPacienteResults(facturacionPacientesCache);
+  });
+}
+
+if (consultaPacienteInput) {
+  consultaPacienteInput.addEventListener('focus', () => {
+    if ((consultaPacienteInput.value || '').trim().length >= 1) {
+      searchConsultaPacientes(consultaPacienteInput.value);
+    }
+  });
+  consultaPacienteInput.addEventListener('input', () => {
+    if (consultaPacienteSearchTimer) {
+      clearTimeout(consultaPacienteSearchTimer);
+    }
+    consultaPacienteSearchTimer = setTimeout(() => {
+      searchConsultaPacientes(consultaPacienteInput.value);
+    }, 250);
+  });
+}
+
+if (consultaMedicoInput) {
+  consultaMedicoInput.addEventListener('focus', () => {
+    if ((consultaMedicoInput.value || '').trim().length >= 1) {
+      searchConsultaMedicos(consultaMedicoInput.value);
+    }
+  });
+  consultaMedicoInput.addEventListener('input', () => {
+    if (consultaMedicoSearchTimer) {
+      clearTimeout(consultaMedicoSearchTimer);
+    }
+    consultaMedicoSearchTimer = setTimeout(() => {
+      searchConsultaMedicos(consultaMedicoInput.value);
+    }, 250);
+  });
+}
+
+if (pacienteNombreInput) {
+  pacienteNombreInput.addEventListener('input', generateCurpPreview);
+}
+if (pacienteApellidoPaternoInput) {
+  pacienteApellidoPaternoInput.addEventListener('input', generateCurpPreview);
+}
+if (pacienteApellidoMaternoInput) {
+  pacienteApellidoMaternoInput.addEventListener('input', generateCurpPreview);
+}
+if (pacienteFechaInput) {
+  pacienteFechaInput.addEventListener('change', generateCurpPreview);
+}
+
+if (facturacionPacienteResults) {
+  facturacionPacienteResults.addEventListener('mousedown', (event) => {
+    event.preventDefault();
   });
 }
 

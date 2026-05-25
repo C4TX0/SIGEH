@@ -74,9 +74,10 @@
                 </div>
                 <div class="form-row">
                   <label>Fecha nacimiento<input id="pac-fecha" type="date" required /></label>
-                  <label>CURP<input id="pac-curp" maxlength="18" required /></label>
+                  <label>CURP<input id="pac-curp" maxlength="18" readonly /></label>
                   <label>Telefono<input id="pac-telefono" /></label>
                 </div>
+                <p class="muted">La CURP se genera automaticamente y solo se muestra para verificarla.</p>
                 <div class="form-row">
                   <label>Correo<input id="pac-correo" type="email" /></label>
                   <label>Tipo sangre
@@ -170,7 +171,7 @@
             <div class="card">
               <h3>Consulta de medicos</h3>
               <div class="toolbar">
-                <input id="medico-id-buscar" type="number" min="1" placeholder="Id medico" />
+                <input id="medico-id-buscar" type="text" placeholder="Busca por id o nombre" autocomplete="off" />
                 <button id="medico-buscar" class="ghost">Buscar</button>
               </div>
               <table id="medicos-table">
@@ -224,11 +225,13 @@
             <h3>Nueva consulta</h3>
             <form id="consulta-form">
               <div class="form-row">
-                <label>Paciente (id)<input id="con-paciente" type="number" min="1" required /></label>
+                <label>Paciente
+                  <input id="con-paciente" placeholder="Busca por id, nombre o CURP" autocomplete="off" required />
+                  <div id="con-paciente-results" class="search-results"></div>
+                </label>
                 <label>Medico
-                  <select id="con-medico" required>
-                    <option value="">Selecciona</option>
-                  </select>
+                  <input id="con-medico" placeholder="Busca por id o nombre" autocomplete="off" required />
+                  <div id="con-medico-results" class="search-results"></div>
                 </label>
                 <label>Estado
                   <select id="con-estado" required>
@@ -668,15 +671,22 @@
             <h3>Facturacion (transaccion)</h3>
             <form id="facturacion-form">
               <div class="form-row">
-                <label>Paciente (id)<input id="fac-paciente" type="number" min="1" required /></label>
-                <label>Folio<input id="fac-folio" required /></label>
+                <label>Paciente (id o nombre)
+                  <input id="fac-paciente" placeholder="Busca por id o nombre" autocomplete="off" required />
+                  <div id="fac-paciente-results" class="search-results"></div>
+                </label>
                 <label>Subtotal<input id="fac-subtotal" type="number" min="0" step="0.01" required /></label>
-                <label>IVA<input id="fac-iva" type="number" min="0" step="0.01" required /></label>
+                <label>IVA<input id="fac-iva" type="number" min="0" step="0.01" readonly /></label>
               </div>
               <div class="form-row">
-                <label>Metodo pago<input id="fac-metodo" required /></label>
+                <label>Metodo pago
+                  <select id="fac-metodo" required>
+                    <option value="">Selecciona un metodo</option>
+                  </select>
+                </label>
                 <label>Monto<input id="fac-monto" type="number" min="0.01" step="0.01" required /></label>
               </div>
+              <p class="muted">El folio se genera automaticamente al guardar la factura.</p>
               <button type="submit" class="primary">Guardar factura y pago</button>
             </form>
           </div>

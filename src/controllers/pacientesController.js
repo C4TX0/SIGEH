@@ -106,6 +106,34 @@ async function getPacientes(req, res) {
   }
 }
 
+async function buscarPacientes(req, res) {
+  const term = (req.query.q || '').trim();
+
+  if (!term) {
+    return res.status(400).json({ message: 'Parametro de busqueda requerido' });
+  }
+
+  try {
+    const result = await queryWithRole(
+      req.user.dbRole,
+      `SELECT id_paciente, nombre, apellido_paterno, apellido_materno, curp
+       FROM pacientes
+       WHERE CAST(id_paciente AS TEXT) ILIKE $1
+          OR nombre ILIKE $1
+          OR apellido_paterno ILIKE $1
+          OR apellido_materno ILIKE $1
+          OR curp ILIKE $1
+       ORDER BY id_paciente
+       LIMIT 8`,
+      [`%${term}%`]
+    );
+
+    return res.status(200).json(result.rows);
+  } catch (err) {
+    return res.status(500).json({ message: 'Error al buscar pacientes' });
+  }
+}
+
 async function updatePaciente(req, res) {
   const id = Number(req.params.id);
   if (!isPositiveNumber(id)) {
@@ -166,6 +194,7 @@ async function updatePaciente(req, res) {
 
 module.exports = {
   createPaciente,
+  buscarPacientes,
   getPacientes,
   getPacienteById,
   updatePaciente
