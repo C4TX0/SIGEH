@@ -13,7 +13,7 @@ flowchart LR
   A --> M[Monitoreo y continuidad]
 ```
 
-- Frontend: [frontend/index.html](frontend/index.html), [frontend/app.js](frontend/app.js), [frontend/styles.css](frontend/styles.css)
+- Frontend: [frontend/index.html](frontend/index.html), [frontend/pages/](frontend/pages), [frontend/js/](frontend/js), [frontend/styles.css](frontend/styles.css)
 - Backend: [src/server.js](src/server.js), [src/controllers/](src/controllers), [src/routes/](src/routes), [src/middleware/](src/middleware)
 - Base de datos: [database.sql](database.sql)
 - Documentacion por bloques: [docs/](docs)
@@ -47,13 +47,9 @@ flowchart LR
 npm install
 ```
 
-2. Crear la base de datos y cargar el DDL con rutas de tablespaces portables:
+2. Crear la base de datos cargando el script principal `database.sql` en PostgreSQL.
 
-```powershell
-npm run setup:db
-```
-
-3. Ajustar el archivo `.env` con credenciales locales. Si el bootstrap no encuentra `.env`, usa las variables del entorno o el usuario admin que pases al script.
+3. Ajustar el archivo `.env` con credenciales locales.
 
 4. Levantar el backend:
 
@@ -160,37 +156,22 @@ Abrir [frontend/index.html](frontend/index.html) en el navegador o servirlo como
 ## Scripts disponibles
 
 - `npm run backup:db`
-- `npm run backup:diferencial`
-- `npm run backup:incremental`
 - `npm run restore:db`
-- `npm run replica:setup`
-- `npm run replica:refresh`
-- `npm run replica:check`
 - `npm run monitor:db`
-- `npm run pitr:plan`
-- `npm run migrate:db`
-- `npm run optimize:compare`
 - `npm run alerts:check`
 
-## Cierres academicos adicionales
+## Evidencia para Capitulo 8 en Word
 
-- Incremental y diferencial: se documentan como manifests logicos basados en `auditoria_cambios` y en el ultimo respaldo exitoso.
-- PITR: se entrega como plan reproducible basado en WAL y `recovery_target_time`.
-- Migracion: se valida con backup + restore hacia otra base PostgreSQL.
-- Optimizacion: se compara `EXPLAIN ANALYZE` con y sin uso de indices.
-- Alertas: se genera una verificacion basica con umbrales y log de alertas.
+Estos archivos no son scripts de la app; son guias SQL para ejecutar en pgAdmin y documentar la Fase 3:
+
+- `scripts/optimization-explain.sql`: genera planes `EXPLAIN ANALYZE` antes/despues para consultas criticas.
+- `scripts/move-critical-table-tablespace.sql`: mueve la tabla critica `consultas` a otro tablespace y valida que siga consultable.
 
 ## Respaldos
 
 - El flujo real usa `pg_dump` y `psql`.
 - Los archivos se guardan en `backups/`.
 - El historial queda registrado en `respaldos_realizados`.
-
-## Replica y continuidad
-
-- Estrategia implementada: `standby por refresco programado`.
-- La standby se crea/refresca desde la primaria mediante snapshot.
-- Verifica sincronizacion con `npm run replica:check`.
 
 ## Seguridad
 
@@ -209,6 +190,8 @@ Abrir [frontend/index.html](frontend/index.html) en el navegador o servirlo como
 SIGEH/
   database.sql
   frontend/
+    pages/
+    js/
   src/
     config/
     controllers/

@@ -468,20 +468,30 @@ INSERT INTO laboratorios (nombre, descripcion, unidad_referencia) VALUES
 ('EGO', 'Examen general de orina', 'mL'),
 ('Tiempos de coagulacion', 'PT y aPTT', 'seg');
 
+INSERT INTO medicos (
+    nombre, apellido_paterno, apellido_materno, cedula_profesional,
+    id_especialidad, telefono, correo_electronico
+) VALUES (
+    'Medico', 'Demo', 'SIGEH', 'MEDDEMO01',
+    (SELECT id_especialidad FROM especialidades WHERE nombre = 'Medicina General'),
+    '5550000000', 'medico.demo@sigeh.local'
+);
+
 -- ============================================================
 -- 6.1 USUARIOS BASE POR ROL (APP)
 -- ============================================================
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-INSERT INTO usuarios (username, password_hash, id_rol, activo)
+INSERT INTO usuarios (username, password_hash, id_rol, id_medico, activo)
 VALUES
 ('admin', crypt('AdminSIGEH2025', gen_salt('bf')),
- (SELECT id_rol FROM roles WHERE nombre = 'ADMIN'), TRUE),
+ (SELECT id_rol FROM roles WHERE nombre = 'ADMIN'), NULL, TRUE),
 ('medico', crypt('MedicoSIGEH2025', gen_salt('bf')),
- (SELECT id_rol FROM roles WHERE nombre = 'MEDICO'), TRUE),
+ (SELECT id_rol FROM roles WHERE nombre = 'MEDICO'),
+ (SELECT id_medico FROM medicos WHERE cedula_profesional = 'MEDDEMO01'), TRUE),
 ('usuario_general', crypt('UsuarioSIGEH2025', gen_salt('bf')),
- (SELECT id_rol FROM roles WHERE nombre = 'USUARIO_GENERAL'), TRUE);
+ (SELECT id_rol FROM roles WHERE nombre = 'USUARIO_GENERAL'), NULL, TRUE);
 
 -- Crear expedientes para pacientes existentes que aun no lo tengan
 INSERT INTO expedientes (id_paciente)

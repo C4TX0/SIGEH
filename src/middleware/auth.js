@@ -24,7 +24,10 @@ function auth(req, res, next) {
       id: payload.sub,
       username: payload.username,
       role: payload.role,
-      dbRole: payload.dbRole,
+      dbRole: {
+        role: payload.dbRole,
+        userId: payload.sub
+      },
       id_medico: payload.id_medico
     };
 
