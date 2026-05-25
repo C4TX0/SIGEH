@@ -10,8 +10,8 @@ const state = {
   payload: null,
   chart: null,
   reportes: {
-    consultas: null,
-    facturacion: null
+    'reportes-consultas': null,
+    'reportes-facturacion': null
   }
 };
 
@@ -103,13 +103,15 @@ function setAuth(token) {
   state.token = token;
   state.payload = decodeJwt(token);
   if (token) {
-    localStorage.setItem('sigeh_token', token);
+    sessionStorage.setItem('sigeh_token', token);
+    localStorage.removeItem('sigeh_token');
   }
 }
 
 function clearAuth() {
   state.token = null;
   state.payload = null;
+  sessionStorage.removeItem('sigeh_token');
   localStorage.removeItem('sigeh_token');
 }
 
@@ -958,30 +960,61 @@ async function handleUsuarioUpdate(event) {
 function setAuditoriaTab(tab) {
   const accesos = document.getElementById('auditoria-accesos');
   const cambios = document.getElementById('auditoria-cambios');
+  const respaldos = document.getElementById('auditoria-respaldos');
+  const monitoreo = document.getElementById('auditoria-monitoreo');
   const btnAccesos = document.getElementById('auditoria-tab-accesos');
   const btnCambios = document.getElementById('auditoria-tab-cambios');
+  const btnRespaldos = document.getElementById('auditoria-tab-respaldos');
+  const btnMonitoreo = document.getElementById('auditoria-tab-monitoreo');
 
-  if (accesos && cambios) {
+  if (accesos && cambios && respaldos && monitoreo) {
     accesos.classList.toggle('hidden', tab !== 'accesos');
     cambios.classList.toggle('hidden', tab !== 'cambios');
+    respaldos.classList.toggle('hidden', tab !== 'respaldos');
+    monitoreo.classList.toggle('hidden', tab !== 'monitoreo');
   }
-  if (btnAccesos && btnCambios) {
+  if (btnAccesos && btnCambios && btnRespaldos && btnMonitoreo) {
     btnAccesos.classList.toggle('active', tab === 'accesos');
     btnCambios.classList.toggle('active', tab === 'cambios');
+    btnRespaldos.classList.toggle('active', tab === 'respaldos');
+    btnMonitoreo.classList.toggle('active', tab === 'monitoreo');
+  }
+}
+
+async function loadInfraMonitor() {
+  try {
+    const [overview, replica] = await Promise.all([
+      apiRequest('/infra/monitor/overview'),
+      apiRequest('/infra/replication/status')
+    ]);
+
+    const overviewOut = document.getElementById('monitor-overview-output');
+    const replicaOut = document.getElementById('monitor-replica-output');
+    if (overviewOut) {
+      overviewOut.textContent = JSON.stringify(overview, null, 2);
+    }
+    if (replicaOut) {
+      replicaOut.textContent = JSON.stringify(replica, null, 2);
+    }
+  } catch (err) {
+    Swal.fire('Error', err.message, 'error');
   }
 }
 
 async function loadAuditoria() {
   try {
-    const [accesos, cambios] = await Promise.all([
+    const [accesos, cambios, respaldos] = await Promise.all([
       apiRequest('/auditoria/accesos'),
-      apiRequest('/auditoria/cambios')
+      apiRequest('/auditoria/cambios'),
+      apiRequest('/auditoria/respaldos')
     ]);
 
     const accesosBody = document.querySelector('#auditoria-accesos-table tbody');
     const cambiosBody = document.querySelector('#auditoria-cambios-table tbody');
+    const respaldosBody = document.querySelector('#auditoria-respaldos-table tbody');
     if (accesosBody) accesosBody.innerHTML = '';
     if (cambiosBody) cambiosBody.innerHTML = '';
+    if (respaldosBody) respaldosBody.innerHTML = '';
 
     (accesos || []).forEach((row) => {
       const tr = document.createElement('tr');
@@ -1009,6 +1042,47 @@ async function loadAuditoria() {
       `;
       cambiosBody && cambiosBody.appendChild(tr);
     });
+
+    (respaldos || []).forEach((row) => {
+      const tr = document.createElement('tr');
+      const existe = row.archivo_existe ? 'Si' : 'No';
+      tr.innerHTML = `
+        <td>${row.tipo_respaldo}</td>
+        <td>${row.ruta_archivo}</td>
+        <td>${row.estado}</td>
+        <td>${new Date(row.fecha_inicio).toLocaleString()}</td>
+        <td>${row.fecha_fin ? new Date(row.fecha_fin).toLocaleString() : ''}</td>
+        <td>${row.tamanio_mb ?? row.tamano_archivo_mb_real ?? ''}</td>
+        <td>${existe}</td>
+      `;
+      respaldosBody && respaldosBody.appendChild(tr);
+    });
+  } catch (err) {
+    Swal.fire('Error', err.message, 'error');
+  }
+}
+
+async function handleRespaldoCreate(event) {
+  event.preventDefault();
+
+  const payload = {
+    tipo_respaldo: document.getElementById('respaldo-tipo').value,
+    directorio: document.getElementById('respaldo-directorio').value.trim() || undefined
+  };
+
+  if (!payload.tipo_respaldo) {
+    return Swal.fire('Error', 'Completa los campos requeridos.', 'error');
+  }
+
+  try {
+    await apiRequest('/auditoria/respaldos', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    Swal.fire('Listo', 'Respaldo generado y registrado', 'success');
+    document.getElementById('respaldo-form').reset();
+    loadAuditoria();
   } catch (err) {
     Swal.fire('Error', err.message, 'error');
   }
@@ -1592,14 +1666,74 @@ async function handleAntecedentesGuardar(event) {
 
 async function loadReportes() {
   try {
-    const consultas = await apiRequest('/reportes/consultas-mes');
-    const facturacion = await apiRequest('/reportes/facturacion-mes');
+    const [consultas, facturacion, ocupacion, inventario, historial] = await Promise.all([
+      apiRequest('/reportes/consultas-mes'),
+      apiRequest('/reportes/facturacion-mes'),
+      apiRequest('/reportes/ocupacion-camas'),
+      apiRequest('/reportes/inventario-farmacia'),
+      apiRequest('/reportes/historial-consultas')
+    ]);
 
     renderReportChart('reportes-consultas', consultas, 'Consultas');
     renderReportChart('reportes-facturacion', facturacion, 'Facturacion');
+    renderOcupacionCamas(ocupacion || []);
+    renderInventarioFarmacia(inventario || []);
+    renderHistorialConsultas(historial || []);
   } catch (err) {
     Swal.fire('Error', err.message, 'error');
   }
+}
+
+function renderOcupacionCamas(rows) {
+  const tbody = document.querySelector('#reportes-camas-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.cama}</td>
+      <td>${row.nombre_paciente} ${row.apellido_paciente || ''}</td>
+      <td>${row.nombre_medico} ${row.apellido_medico || ''}</td>
+      <td>${new Date(row.fecha_ingreso).toLocaleString()}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderInventarioFarmacia(rows) {
+  const tbody = document.querySelector('#reportes-inventario-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const nombre = row.nombre_comercial || row.nombre_generico;
+    tr.innerHTML = `
+      <td>${nombre}</td>
+      <td>${row.presentacion}</td>
+      <td>${row.stock}</td>
+      <td>${row.precio_unitario}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderHistorialConsultas(rows) {
+  const tbody = document.querySelector('#reportes-historial-table tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${new Date(row.fecha_hora).toLocaleString()}</td>
+      <td>${row.nombre_paciente} ${row.apellido_paciente || ''}</td>
+      <td>${row.nombre_medico} ${row.apellido_medico || ''}</td>
+      <td>${row.estado}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 }
 
 function renderReportChart(elementId, data, label) {
@@ -1632,13 +1766,16 @@ function renderReportChart(elementId, data, label) {
 }
 
 function hydrateSession() {
-  const token = localStorage.getItem('sigeh_token');
+  const token = sessionStorage.getItem('sigeh_token') || localStorage.getItem('sigeh_token');
   if (!token) {
     showLogin();
     return;
   }
 
   setAuth(token);
+  if (localStorage.getItem('sigeh_token')) {
+    localStorage.removeItem('sigeh_token');
+  }
   if (!requireAuth()) {
     return;
   }
@@ -1747,11 +1884,32 @@ if (auditoriaBtn) {
 
 const auditoriaTabAccesos = document.getElementById('auditoria-tab-accesos');
 const auditoriaTabCambios = document.getElementById('auditoria-tab-cambios');
+const auditoriaTabRespaldos = document.getElementById('auditoria-tab-respaldos');
+const auditoriaTabMonitoreo = document.getElementById('auditoria-tab-monitoreo');
 if (auditoriaTabAccesos) {
   auditoriaTabAccesos.addEventListener('click', () => setAuditoriaTab('accesos'));
 }
 if (auditoriaTabCambios) {
   auditoriaTabCambios.addEventListener('click', () => setAuditoriaTab('cambios'));
+}
+if (auditoriaTabRespaldos) {
+  auditoriaTabRespaldos.addEventListener('click', () => setAuditoriaTab('respaldos'));
+}
+if (auditoriaTabMonitoreo) {
+  auditoriaTabMonitoreo.addEventListener('click', () => {
+    setAuditoriaTab('monitoreo');
+    loadInfraMonitor();
+  });
+}
+
+const auditoriaMonitorBtn = document.getElementById('auditoria-monitor-cargar');
+if (auditoriaMonitorBtn) {
+  auditoriaMonitorBtn.addEventListener('click', loadInfraMonitor);
+}
+
+const respaldoForm = document.getElementById('respaldo-form');
+if (respaldoForm) {
+  respaldoForm.addEventListener('submit', handleRespaldoCreate);
 }
 
 const facturacionForm = document.getElementById('facturacion-form');

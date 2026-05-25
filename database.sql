@@ -3,19 +3,15 @@
 -- Script DDL para PostgreSQL con TABLESPACES explicitos
 -- Modelo relacional normalizado con 20 tablas
 --
--- Requisitos previos antes de ejecutar este archivo:
--- 1) Crear carpetas fisicas:
---    C:/sigeh/ts_datos
---    C:/sigeh/ts_index
---    C:/sigeh/ts_logs
---    C:/sigeh/ts_backup
--- 2) Dar permisos de lectura/escritura/modificar a SERVICIO DE RED
--- 3) Crear tablespaces desde la base postgres:
-CREATE TABLESPACE ts_datos  LOCATION 'C:/sigeh/ts_datos';
-CREATE TABLESPACE ts_index  LOCATION 'C:/sigeh/ts_index';
-CREATE TABLESPACE ts_logs   LOCATION 'C:/sigeh/ts_logs';
-CREATE TABLESPACE ts_backup LOCATION 'C:/sigeh/ts_backup';
--- 4) Crear base de datos:
+-- Este archivo usa variables de psql para las rutas fisicas de tablespaces.
+-- Deben pasarse al ejecutar el bootstrap de BD o `psql` directamente:
+--   ts_datos_path, ts_index_path, ts_logs_path, ts_backup_path
+-- Ejemplo portable: usar `scripts/setup-db.ps1`.
+CREATE TABLESPACE ts_datos  LOCATION :'ts_datos_path';
+CREATE TABLESPACE ts_index  LOCATION :'ts_index_path';
+CREATE TABLESPACE ts_logs   LOCATION :'ts_logs_path';
+CREATE TABLESPACE ts_backup LOCATION :'ts_backup_path';
+-- Crear base de datos:
 CREATE DATABASE sigeh_db WITH OWNER = postgres ENCODING = 'UTF8' TABLESPACE = ts_datos;
 
 -- 5) Conectarse a sigeh_db y ejecutar este script.
@@ -33,11 +29,15 @@ CREATE ROLE rol_usuario_general_sigeh;
 CREATE USER admin_sigeh            WITH PASSWORD 'AdminSIGEH2025';
 CREATE USER medico_sigeh           WITH PASSWORD 'MedicoSIGEH2025';
 CREATE USER usuario_general_sigeh  WITH PASSWORD 'UsuarioSIGEH2025';
+CREATE USER sigeh_app              WITH PASSWORD 'SigehApp_9b2f4d7c!' CREATEDB;
 
 -- 3. Asociación de Usuarios a Roles [cite: 964]
 GRANT rol_admin_sigeh           TO admin_sigeh;
 GRANT rol_medico_sigeh          TO medico_sigeh;
 GRANT rol_usuario_general_sigeh TO usuario_general_sigeh;
+GRANT rol_admin_sigeh           TO sigeh_app;
+GRANT rol_medico_sigeh          TO sigeh_app;
+GRANT rol_usuario_general_sigeh TO sigeh_app;
 
 -- 4. Permisos de Conexión y Uso de Esquema (para todos los roles) [cite: 966]
 GRANT CONNECT ON DATABASE sigeh_db TO rol_admin_sigeh, rol_medico_sigeh, rol_usuario_general_sigeh;
@@ -182,6 +182,7 @@ CREATE TABLE usuarios (
     id_medico INTEGER,
     intentos_fallidos SMALLINT NOT NULL DEFAULT 0,
     bloqueado BOOLEAN NOT NULL DEFAULT FALSE,
+    bloqueado_hasta TIMESTAMP,
     activo BOOLEAN NOT NULL DEFAULT TRUE,
     fecha_ultimo_acceso TIMESTAMP,
     CONSTRAINT usuarios_pkey PRIMARY KEY (id_usuario) USING INDEX TABLESPACE ts_index,
@@ -359,6 +360,9 @@ CREATE TABLE bitacora_accesos (
         REFERENCES usuarios(id_usuario) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT chk_bitacora_accesos_tipo_evento CHECK (tipo_evento IN ('LOGIN_OK', 'LOGIN_FAIL', 'LOGOUT', 'BLOQUEO'))
 ) TABLESPACE ts_logs;
+
+GRANT SELECT ON bitacora_accesos TO rol_admin_sigeh;
+GRANT SELECT ON usuarios TO rol_admin_sigeh;
 
 CREATE TABLE auditoria_cambios (
     id_auditoria BIGSERIAL NOT NULL,
@@ -539,15 +543,12 @@ CREATE OR REPLACE PROCEDURE surtir_receta_farmacia(
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    START TRANSACTION;
-
     PERFORM 1
     FROM recetas
     WHERE id_receta = p_id_receta_medica
     FOR UPDATE;
 
     IF NOT FOUND THEN
-        ROLLBACK;
         RAISE EXCEPTION 'Receta no existe';
     END IF;
 
@@ -557,7 +558,6 @@ BEGIN
         WHERE id_receta = p_id_receta_medica
           AND dispensada = TRUE
     ) THEN
-        ROLLBACK;
         RAISE EXCEPTION 'Receta ya fue dispensada';
     END IF;
 
@@ -566,7 +566,6 @@ BEGIN
         FROM detalle_receta
         WHERE id_receta = p_id_receta_medica
     ) THEN
-        ROLLBACK;
         RAISE EXCEPTION 'Receta sin detalle de medicamentos';
     END IF;
 
@@ -581,7 +580,6 @@ BEGIN
         JOIN medicamentos m ON m.id_medicamento = req.id_medicamento
         WHERE m.stock < req.cantidad
     ) THEN
-        ROLLBACK;
         RAISE EXCEPTION 'Stock insuficiente para surtir receta';
     END IF;
 
@@ -599,25 +597,24 @@ BEGIN
     SET dispensada = TRUE,
         fecha_dispensacion = NOW()
     WHERE id_receta = p_id_receta_medica;
-
-    COMMIT;
-EXCEPTION
-    WHEN OTHERS THEN
-        ROLLBACK;
-        RAISE;
 END;
 $$;
 
 CREATE OR REPLACE PROCEDURE generar_factura_consulta(
     p_id_pac INTEGER,
     p_folio_fact VARCHAR,
-    p_importe NUMERIC
+    p_subtotal NUMERIC,
+    p_iva NUMERIC
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    IF p_subtotal < 0 OR p_iva < 0 THEN
+        RAISE EXCEPTION 'Montos invalidos para factura';
+    END IF;
+
     INSERT INTO facturas (id_paciente, folio, subtotal, iva, total, estado)
-    VALUES (p_id_pac, p_folio_fact, p_importe, 0, p_importe, 'Pendiente');
+    VALUES (p_id_pac, p_folio_fact, p_subtotal, p_iva, 0, 'Pendiente');
 END;
 $$;
 
@@ -656,6 +653,12 @@ BEGIN
     WHERE id_factura = p_id_fact;
 END;
 $$;
+
+GRANT EXECUTE ON PROCEDURE registrar_nueva_consulta(INTEGER, INTEGER, INTEGER, TIMESTAMP, TEXT) TO rol_admin_sigeh, rol_usuario_general_sigeh;
+GRANT EXECUTE ON PROCEDURE procesar_alta_hospitalaria(INTEGER, TEXT) TO rol_admin_sigeh, rol_medico_sigeh;
+GRANT EXECUTE ON PROCEDURE surtir_receta_farmacia(INTEGER) TO rol_admin_sigeh;
+GRANT EXECUTE ON PROCEDURE generar_factura_consulta(INTEGER, VARCHAR, NUMERIC, NUMERIC) TO rol_admin_sigeh, rol_usuario_general_sigeh;
+GRANT EXECUTE ON PROCEDURE registrar_pago_factura(INTEGER, VARCHAR, NUMERIC, INTEGER) TO rol_admin_sigeh, rol_usuario_general_sigeh;
 
 -- ============================================================
 -- 8. VISTAS
@@ -734,6 +737,11 @@ SELECT
 FROM pagos p
 GROUP BY EXTRACT(YEAR FROM p.fecha_pago), EXTRACT(MONTH FROM p.fecha_pago)
 ORDER BY anio, mes;
+
+GRANT SELECT ON vw_ocupacion_camas, vw_historial_consultas, vw_inventario_farmacia, vw_facturacion_mensual TO rol_admin_sigeh;
+GRANT SELECT, INSERT ON respaldos_realizados TO rol_admin_sigeh;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO rol_admin_sigeh;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO rol_admin_sigeh;
 
 -- ============================================================
 -- 9. TRIGGERS OPERATIVOS

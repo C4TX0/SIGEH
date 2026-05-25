@@ -5,12 +5,36 @@ function isPositiveNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
 
+function normalizeUsername(value) {
+  return String(value || '').trim();
+}
+
+function isValidUsername(value) {
+  return /^[A-Za-z0-9._-]{3,60}$/.test(value);
+}
+
+function parseBooleanField(value) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (value === true || value === 'true' || value === 1 || value === '1') {
+    return true;
+  }
+
+  if (value === false || value === 'false' || value === 0 || value === '0') {
+    return false;
+  }
+
+  return null;
+}
+
 async function listUsuarios(req, res) {
   try {
     const result = await queryWithRole(
       req.user.dbRole,
       `SELECT u.id_usuario, u.username, u.id_rol, r.nombre AS rol,
-              u.id_medico, u.intentos_fallidos, u.bloqueado, u.activo,
+              u.id_medico, u.intentos_fallidos, u.bloqueado, u.bloqueado_hasta, u.activo,
               u.fecha_ultimo_acceso
        FROM usuarios u
        JOIN roles r ON r.id_rol = u.id_rol
@@ -33,7 +57,7 @@ async function getUsuarioById(req, res) {
     const result = await queryWithRole(
       req.user.dbRole,
       `SELECT u.id_usuario, u.username, u.id_rol, r.nombre AS rol,
-              u.id_medico, u.intentos_fallidos, u.bloqueado, u.activo,
+              u.id_medico, u.intentos_fallidos, u.bloqueado, u.bloqueado_hasta, u.activo,
               u.fecha_ultimo_acceso
        FROM usuarios u
        JOIN roles r ON r.id_rol = u.id_rol
@@ -52,10 +76,19 @@ async function getUsuarioById(req, res) {
 }
 
 async function createUsuario(req, res) {
-  const { username, password, id_rol, id_medico } = req.body || {};
+  const { password, id_rol, id_medico } = req.body || {};
+  const username = normalizeUsername(req.body && req.body.username);
 
   if (!username || !password || !id_rol) {
     return res.status(400).json({ message: 'Datos requeridos incompletos' });
+  }
+
+  if (!isValidUsername(username)) {
+    return res.status(400).json({ message: 'Username invalido' });
+  }
+
+  if (typeof password !== 'string' || password.trim().length < 8 || password.length > 128) {
+    return res.status(400).json({ message: 'Password invalida' });
   }
 
   if (!isPositiveNumber(Number(id_rol))) {
@@ -93,12 +126,16 @@ async function updateUsuario(req, res) {
   }
 
   const fields = {
-    username: req.body.username,
+    username: normalizeUsername(req.body.username),
     id_rol: req.body.id_rol,
     id_medico: req.body.id_medico,
-    bloqueado: req.body.bloqueado,
-    activo: req.body.activo
+    bloqueado: parseBooleanField(req.body.bloqueado),
+    activo: parseBooleanField(req.body.activo)
   };
+
+  if (fields.username && !isValidUsername(fields.username)) {
+    return res.status(400).json({ message: 'Username invalido' });
+  }
 
   if (fields.id_rol !== undefined && fields.id_rol !== null) {
     if (!isPositiveNumber(Number(fields.id_rol))) {
@@ -115,6 +152,10 @@ async function updateUsuario(req, res) {
   const keys = Object.keys(fields).filter((k) => fields[k] !== undefined);
   if (keys.length === 0 && !req.body.password) {
     return res.status(400).json({ message: 'Sin cambios para actualizar' });
+  }
+
+  if (req.body.password && (typeof req.body.password !== 'string' || req.body.password.trim().length < 8 || req.body.password.length > 128)) {
+    return res.status(400).json({ message: 'Password invalida' });
   }
 
   const setClauses = keys.map((k, idx) => `${k} = $${idx + 1}`);
