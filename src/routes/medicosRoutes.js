@@ -1,13 +1,16 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const authorize = require('../middleware/authorize');
-const { pool } = require('../config/db');
+const { queryWithRole } = require('../config/db');
 
 const router = express.Router();
 
 router.get('/', auth, authorize(['ADMIN']), async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM medicos ORDER BY id_medico');
+    const result = await queryWithRole(
+      req.user.dbRole,
+      'SELECT * FROM medicos ORDER BY id_medico'
+    );
     return res.status(200).json(result.rows);
   } catch (err) {
     return res.status(500).json({ message: 'Error al consultar medicos' });
@@ -30,7 +33,8 @@ router.post('/', auth, authorize(['ADMIN']), async (req, res) => {
   }
 
   try {
-    const result = await pool.query(
+    const result = await queryWithRole(
+      req.user.dbRole,
       `INSERT INTO medicos (
         nombre, apellido_paterno, apellido_materno, cedula_profesional,
         id_especialidad, telefono, correo_electronico
@@ -63,7 +67,11 @@ router.get('/:id', auth, authorize(['ADMIN']), async (req, res) => {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM medicos WHERE id_medico = $1', [id]);
+    const result = await queryWithRole(
+      req.user.dbRole,
+      'SELECT * FROM medicos WHERE id_medico = $1',
+      [id]
+    );
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Medico no encontrado' });
     }
@@ -100,7 +108,8 @@ router.put('/:id', auth, authorize(['ADMIN']), async (req, res) => {
   values.push(id);
 
   try {
-    const result = await pool.query(
+    const result = await queryWithRole(
+      req.user.dbRole,
       `UPDATE medicos SET ${setClauses.join(', ')} WHERE id_medico = $${values.length} RETURNING id_medico`,
       values
     );

@@ -16,6 +16,8 @@ const auditoriaRoutes = require('./routes/auditoriaRoutes');
 const facturacionRoutes = require('./routes/facturacionRoutes');
 const medicoOperativoRoutes = require('./routes/medicoOperativoRoutes');
 const infraRoutes = require('./routes/infraRoutes');
+const operacionRoutes = require('./routes/operacionRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const { pool } = require('./config/db');
 
 const app = express();
@@ -72,6 +74,8 @@ app.use('/api/auditoria', auditoriaRoutes);
 app.use('/api/facturacion', facturacionRoutes);
 app.use('/api/medico', medicoOperativoRoutes);
 app.use('/api/infra', infraRoutes);
+app.use('/api/operacion', operacionRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: 'Ruta no encontrada' });

@@ -17,23 +17,53 @@ const pool = new Pool({
   idleTimeoutMillis: 30000
 });
 
-function requireDbRole(dbRole) {
-  if (!ALLOWED_DB_ROLES.has(dbRole)) {
-    throw new Error('Rol de base de datos no permitido');
+function parseDbContext(dbRoleContext) {
+  if (typeof dbRoleContext === 'string') {
+    return {
+      role: dbRoleContext,
+      userId: null
+    };
   }
-  return dbRole;
+
+  if (dbRoleContext && typeof dbRoleContext === 'object') {
+    return {
+      role: dbRoleContext.role,
+      userId: dbRoleContext.userId || null
+    };
+  }
+
+  return {
+    role: null,
+    userId: null
+  };
 }
 
-async function getClientWithRole(dbRole) {
+function requireDbRole(dbRoleContext) {
+  const context = parseDbContext(dbRoleContext);
+
+  if (!ALLOWED_DB_ROLES.has(context.role)) {
+    throw new Error('Rol de base de datos no permitido');
+  }
+
+  return context;
+}
+
+async function getClientWithRole(dbRoleContext) {
   const client = await pool.connect();
-  const safeRole = requireDbRole(dbRole);
+  const context = requireDbRole(dbRoleContext);
 
   try {
-    await client.query(`SET ROLE ${safeRole}`);
+    await client.query(`SET ROLE ${context.role}`);
+    await client.query(
+      "SELECT set_config('sigeh.usuario_id', $1, false)",
+      [context.userId ? String(context.userId) : '']
+    );
+
     return {
       client,
       release: async () => {
         try {
+          await client.query("SELECT set_config('sigeh.usuario_id', '', false)");
           await client.query('RESET ROLE');
         } finally {
           client.release();

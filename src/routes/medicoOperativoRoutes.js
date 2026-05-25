@@ -2,6 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const authorize = require('../middleware/authorize');
 const {
+  getResumenMedico,
   getAgendaHoy,
   atenderConsulta,
   crearReceta,
@@ -14,6 +15,7 @@ const {
 
 const router = express.Router();
 
+router.get('/resumen', auth, authorize(['MEDICO']), getResumenMedico);
 router.get('/agenda', auth, authorize(['MEDICO']), getAgendaHoy);
 router.patch('/consultas/:id/atender', auth, authorize(['MEDICO']), atenderConsulta);
 router.post('/consultas/:id/recetas', auth, authorize(['MEDICO']), crearReceta);

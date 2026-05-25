@@ -9,6 +9,121 @@ function getMedicoId(req) {
   return isPositiveNumber(idMedico) ? idMedico : null;
 }
 
+async function getResumenMedico(req, res) {
+  const idMedico = getMedicoId(req);
+  if (!idMedico) {
+    return res.status(400).json({ message: 'Medico no asociado al usuario' });
+  }
+
+  try {
+    const [
+      perfil,
+      agendaHoy,
+      resumenAgenda,
+      proximaConsulta,
+      hospitalizaciones,
+      estudiosPendientes,
+      recetasHoy
+    ] = await Promise.all([
+      queryWithRole(
+        req.user.dbRole,
+        `SELECT m.id_medico, m.nombre, m.apellido_paterno, m.apellido_materno,
+                m.cedula_profesional, e.nombre AS especialidad
+         FROM medicos m
+         JOIN especialidades e ON e.id_especialidad = m.id_especialidad
+         WHERE m.id_medico = $1`,
+        [idMedico]
+      ),
+      queryWithRole(
+        req.user.dbRole,
+        `SELECT c.id_consulta, c.fecha_hora, c.motivo, ec.nombre AS estado,
+                p.id_paciente, p.nombre, p.apellido_paterno, p.apellido_materno
+         FROM consultas c
+         JOIN pacientes p ON p.id_paciente = c.id_paciente
+         JOIN estados_consulta ec ON ec.id_estado = c.id_estado
+         WHERE c.id_medico = $1
+           AND DATE(c.fecha_hora) = CURRENT_DATE
+         ORDER BY c.fecha_hora
+         LIMIT 6`,
+        [idMedico]
+      ),
+      queryWithRole(
+        req.user.dbRole,
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE ec.nombre = 'Programada')::int AS programadas,
+           COUNT(*) FILTER (WHERE ec.nombre = 'En atencion')::int AS en_atencion,
+           COUNT(*) FILTER (WHERE ec.nombre = 'Atendida')::int AS atendidas
+         FROM consultas c
+         JOIN estados_consulta ec ON ec.id_estado = c.id_estado
+         WHERE c.id_medico = $1
+           AND DATE(c.fecha_hora) = CURRENT_DATE`,
+        [idMedico]
+      ),
+      queryWithRole(
+        req.user.dbRole,
+        `SELECT c.id_consulta, c.fecha_hora, c.motivo, ec.nombre AS estado,
+                p.id_paciente, p.nombre, p.apellido_paterno
+         FROM consultas c
+         JOIN pacientes p ON p.id_paciente = c.id_paciente
+         JOIN estados_consulta ec ON ec.id_estado = c.id_estado
+         WHERE c.id_medico = $1
+           AND c.fecha_hora >= NOW()
+           AND ec.nombre <> 'Atendida'
+         ORDER BY c.fecha_hora
+         LIMIT 1`,
+        [idMedico]
+      ),
+      queryWithRole(
+        req.user.dbRole,
+        `SELECT COUNT(*)::int AS total
+         FROM hospitalizaciones
+         WHERE id_medico = $1
+           AND fecha_alta IS NULL`,
+        [idMedico]
+      ),
+      queryWithRole(
+        req.user.dbRole,
+        `SELECT COUNT(*)::int AS total
+         FROM estudios_laboratorio
+         WHERE id_medico = $1
+           AND estado IN ('Solicitado', 'En proceso')`,
+        [idMedico]
+      ),
+      queryWithRole(
+        req.user.dbRole,
+        `SELECT COUNT(*)::int AS total
+         FROM recetas
+         WHERE id_medico = $1
+           AND DATE(fecha_emision) = CURRENT_DATE`,
+        [idMedico]
+      )
+    ]);
+
+    return res.status(200).json({
+      perfil: perfil.rows[0] || null,
+      resumen_agenda: resumenAgenda.rows[0] || {
+        total: 0,
+        programadas: 0,
+        en_atencion: 0,
+        atendidas: 0
+      },
+      proxima_consulta: proximaConsulta.rows[0] || null,
+      agenda_hoy: agendaHoy.rows,
+      hospitalizaciones_activas: hospitalizaciones.rows[0].total,
+      estudios_pendientes: estudiosPendientes.rows[0].total,
+      recetas_hoy: recetasHoy.rows[0].total
+    });
+  } catch (err) {
+    console.error('getResumenMedico error:', {
+      message: err.message,
+      code: err.code,
+      detail: err.detail
+    });
+    return res.status(500).json({ message: 'Error al consultar resumen medico' });
+  }
+}
+
 async function getAgendaHoy(req, res) {
   const idMedico = getMedicoId(req);
   if (!idMedico) {
@@ -288,6 +403,7 @@ async function altaHospitalizacion(req, res) {
 }
 
 module.exports = {
+  getResumenMedico,
   getAgendaHoy,
   atenderConsulta,
   crearReceta,
